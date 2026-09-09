@@ -9,22 +9,107 @@ const status = document.getElementById("status");
 const connectionDisplay = document.getElementById("peerIdDisplay");
 const resolutionSelect = document.getElementById("resolutionSelect");
 const frameRateSelect = document.getElementById("frameRateSelect");
-const peerConnection = new RTCPeerConnection({
-  iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-});
+const broadcasterConnections = new Map();
 
 let captureStream = null;
-let remoteDescriptionReady = false;
-const pendingIceCandidates = [];
+let viewerConnection = null;
+let isBroadcaster = false;
 
 socket.on("connect", () => {
   connectionDisplay.textContent = "Conectado";
   status.textContent = "Aguardando conexão";
+  socket.emit("watcher");
 });
 
 socket.on("disconnect", () => {
   connectionDisplay.textContent = "Desconectado";
   status.textContent = "Servidor desconectado";
+});
+
+socket.on("broadcaster", () => {
+  if (!isBroadcaster) socket.emit("watcher");
+});
+
+socket.on("watcher", async (watcherId) => {
+  if (!isBroadcaster || !captureStream) return;
+
+  const connection = createConnection(watcherId, true);
+  captureStream.getTracks().forEach((track) => {
+    connection.addTrack(track, captureStream);
+  });
+
+  const offer = await connection.createOffer();
+  await connection.setLocalDescription(offer);
+  socket.emit("offer", watcherId, connection.localDescription);
+});
+
+socket.on("offer", async (broadcasterSocketId, offer) => {
+  try {
+    closeViewerConnection();
+    viewerConnection = createConnection(broadcasterSocketId, false);
+    await viewerConnection.setRemoteDescription(offer);
+    await addPendingIceCandidates(viewerConnection);
+
+    const answer = await viewerConnection.createAnswer();
+    await viewerConnection.setLocalDescription(answer);
+    socket.emit(
+      "answer",
+      broadcasterSocketId,
+      viewerConnection.localDescription,
+    );
+    status.textContent = "Conectando à tela compartilhada";
+  } catch (error) {
+    console.error("Erro ao receber a oferta:", error);
+    status.textContent = "Não foi possível receber a tela";
+  }
+});
+
+socket.on("answer", async (watcherId, answer) => {
+  const connection = broadcasterConnections.get(watcherId);
+  if (!connection) return;
+
+  try {
+    await connection.setRemoteDescription(answer);
+    await addPendingIceCandidates(connection);
+  } catch (error) {
+    console.error("Erro ao receber a resposta:", error);
+  }
+});
+
+socket.on("ice-candidate", async (peerId, candidate) => {
+  const connection = isBroadcaster
+    ? broadcasterConnections.get(peerId)
+    : viewerConnection;
+
+  if (!connection) return;
+
+  if (!connection.remoteDescription) {
+    connection.pendingIceCandidates.push(candidate);
+    return;
+  }
+
+  try {
+    await connection.addIceCandidate(candidate);
+  } catch (error) {
+    console.error("Erro ao adicionar candidato ICE:", error);
+  }
+});
+
+socket.on("disconnectPeer", (peerId) => {
+  const connection = broadcasterConnections.get(peerId);
+  connection?.close();
+  broadcasterConnections.delete(peerId);
+
+  if (viewerConnection && viewerConnection.peerId === peerId) {
+    closeViewerConnection();
+  }
+});
+
+socket.on("broadcaster-stopped", () => {
+  closeViewerConnection();
+  videoElement.srcObject = null;
+  emptyState.hidden = false;
+  status.textContent = "A transmissão foi encerrada";
 });
 
 startBtn.addEventListener("click", startSharing);
@@ -38,68 +123,6 @@ fullscreenBtn.addEventListener("click", async () => {
   }
 });
 
-peerConnection.ontrack = (event) => {
-  videoElement.srcObject = event.streams[0];
-  emptyState.hidden = true;
-  status.textContent = "Transmitindo ao vivo";
-};
-
-peerConnection.onicecandidate = (event) => {
-  if (event.candidate) socket.emit("ice-candidate", event.candidate);
-};
-
-peerConnection.onconnectionstatechange = () => {
-  if (
-    ["failed", "disconnected", "closed"].includes(
-      peerConnection.connectionState,
-    )
-  ) {
-    status.textContent = "Conexão encerrada";
-  }
-};
-
-socket.on("offer", async (offer) => {
-  try {
-    await peerConnection.setRemoteDescription(offer);
-    remoteDescriptionReady = true;
-    await addPendingIceCandidates();
-
-    const answer = await peerConnection.createAnswer();
-    await peerConnection.setLocalDescription(answer);
-    socket.emit("answer", answer);
-    status.textContent = "Conectando à tela compartilhada";
-  } catch (error) {
-    console.error("Erro ao receber a oferta:", error);
-    status.textContent = "Não foi possível receber a tela";
-  }
-});
-
-socket.on("answer", async (answer) => {
-  if (peerConnection.signalingState !== "have-local-offer") return;
-
-  try {
-    await peerConnection.setRemoteDescription(answer);
-    remoteDescriptionReady = true;
-    await addPendingIceCandidates();
-    status.textContent = "Tela compartilhada";
-  } catch (error) {
-    console.error("Erro ao receber a resposta:", error);
-  }
-});
-
-socket.on("ice-candidate", async (candidate) => {
-  if (!remoteDescriptionReady) {
-    pendingIceCandidates.push(candidate);
-    return;
-  }
-
-  try {
-    await peerConnection.addIceCandidate(candidate);
-  } catch (error) {
-    console.error("Erro ao adicionar candidato ICE:", error);
-  }
-});
-
 async function startSharing() {
   try {
     const videoConstraints = getVideoConstraints();
@@ -108,19 +131,13 @@ async function startSharing() {
       audio: false,
     });
 
-    captureStream.getTracks().forEach((track) => {
-      peerConnection.addTrack(track, captureStream);
-    });
-
+    isBroadcaster = true;
+    socket.emit("broadcaster");
     videoElement.srcObject = captureStream;
     emptyState.hidden = true;
     startBtn.disabled = true;
     stopBtn.disabled = false;
     status.textContent = "Compartilhando sua tela";
-
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-    socket.emit("offer", offer);
 
     captureStream.getVideoTracks()[0].addEventListener("ended", stopSharing);
   } catch (error) {
@@ -133,11 +150,65 @@ async function startSharing() {
 function stopSharing() {
   captureStream?.getTracks().forEach((track) => track.stop());
   captureStream = null;
+  isBroadcaster = false;
+  socket.emit("stop-broadcast");
+
+  broadcasterConnections.forEach((connection) => connection.close());
+  broadcasterConnections.clear();
+  closeViewerConnection();
+
   videoElement.srcObject = null;
   emptyState.hidden = false;
   startBtn.disabled = false;
   stopBtn.disabled = true;
   status.textContent = "Aguardando conexão";
+}
+
+function createConnection(peerId, broadcasterSide) {
+  const connection = new RTCPeerConnection({
+    iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+  });
+  connection.peerId = peerId;
+  connection.pendingIceCandidates = [];
+
+  connection.onicecandidate = (event) => {
+    if (event.candidate) {
+      socket.emit("ice-candidate", peerId, event.candidate);
+    }
+  };
+
+  connection.ontrack = (event) => {
+    if (!broadcasterSide) {
+      videoElement.srcObject = event.streams[0];
+      emptyState.hidden = true;
+      status.textContent = "Transmitindo ao vivo";
+    }
+  };
+
+  connection.onconnectionstatechange = () => {
+    if (
+      ["failed", "disconnected", "closed"].includes(connection.connectionState)
+    ) {
+      broadcasterConnections.delete(peerId);
+    }
+  };
+
+  if (broadcasterSide) {
+    broadcasterConnections.set(peerId, connection);
+  }
+
+  return connection;
+}
+
+async function addPendingIceCandidates(connection) {
+  while (connection.pendingIceCandidates.length > 0) {
+    await connection.addIceCandidate(connection.pendingIceCandidates.shift());
+  }
+}
+
+function closeViewerConnection() {
+  viewerConnection?.close();
+  viewerConnection = null;
 }
 
 function getVideoConstraints() {
@@ -159,12 +230,6 @@ function getVideoConstraints() {
   }
 
   return constraints;
-}
-
-async function addPendingIceCandidates() {
-  while (pendingIceCandidates.length > 0) {
-    await peerConnection.addIceCandidate(pendingIceCandidates.shift());
-  }
 }
 
 document.addEventListener("fullscreenchange", () => {
