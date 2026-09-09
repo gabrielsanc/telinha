@@ -25,6 +25,13 @@
         </div>
       </section>
 
+      <section class="sharing-list" aria-labelledby="sharingTitle">
+        <h2 id="sharingTitle">Pessoas compartilhando a tela</h2>
+        <ul id="sharingPeopleList">
+          <li class="empty-list">Ninguém está compartilhando no momento.</li>
+        </ul>
+      </section>
+
       <section class="controls" aria-label="Controles de compartilhamento">
         <div class="actions">
           <button id="startBtn">Compartilhar tela</button>
@@ -73,6 +80,8 @@
       const resolutionSelect = document.getElementById("resolutionSelect");
       const frameRateSelect = document.getElementById("frameRateSelect");
       const viewerIdInput = document.getElementById("viewerIdInput");
+      const sharingPeopleList = document.getElementById("sharingPeopleList");
+      const activeShares = new Map();
       let captureStream = null;
       const peer = new Peer();
 
@@ -87,10 +96,14 @@
         chamada.answer();
 
         chamada.on("stream", (fluxoDeVideoRemoto) => {
+          addSharingPerson(chamada.peer, "remoto");
           videoElement.srcObject = fluxoDeVideoRemoto;
           emptyState.hidden = true;
           status.textContent = "Transmitindo ao vivo";
         });
+
+        chamada.on("close", () => removeSharingPerson(chamada.peer));
+        chamada.on("error", () => removeSharingPerson(chamada.peer));
       });
 
       // Função para iniciar a captura
@@ -137,7 +150,10 @@
           status.textContent = "Compartilhamento ativo";
 
           // Envia o fluxo de vídeo para o outro usuário pelo PeerJS
-          peer.call(idDoAmigo, captureStream);
+          const chamada = peer.call(idDoAmigo, captureStream);
+          addSharingPerson("Você", "local");
+          chamada.on("close", () => removeSharingPerson("Você"));
+          chamada.on("error", () => removeSharingPerson("Você"));
 
           // Atualiza o estado dos botões
           startBtn.disabled = true;
@@ -187,6 +203,35 @@
         startBtn.disabled = false;
         stopBtn.disabled = true;
         status.textContent = "Aguardando conexão";
+        removeSharingPerson("Você");
+      }
+
+      function addSharingPerson(peerId, type) {
+        activeShares.set(peerId, type);
+        renderSharingPeople();
+      }
+
+      function removeSharingPerson(peerId) {
+        activeShares.delete(peerId);
+        renderSharingPeople();
+      }
+
+      function renderSharingPeople() {
+        sharingPeopleList.replaceChildren();
+
+        if (activeShares.size === 0) {
+          const emptyItem = document.createElement("li");
+          emptyItem.className = "empty-list";
+          emptyItem.textContent = "Ninguém está compartilhando no momento.";
+          sharingPeopleList.append(emptyItem);
+          return;
+        }
+
+        activeShares.forEach((type, peerId) => {
+          const personItem = document.createElement("li");
+          personItem.textContent = type === "local" ? "Sua tela" : peerId;
+          sharingPeopleList.append(personItem);
+        });
       }
     </script>
   </body>
