@@ -1,5 +1,6 @@
 const socket = io();
 const startBtn = document.getElementById("startBtn");
+const testBtn = document.getElementById("testBtn");
 const stopBtn = document.getElementById("stopBtn");
 const fullscreenBtn = document.getElementById("fullscreenBtn");
 const videoElement = document.getElementById("videoElement");
@@ -118,6 +119,7 @@ socket.on("broadcaster-stopped", () => {
 });
 
 startBtn.addEventListener("click", startSharing);
+testBtn.addEventListener("click", testCapture);
 stopBtn.addEventListener("click", stopSharing);
 
 fullscreenBtn.addEventListener("click", async () => {
@@ -141,6 +143,7 @@ async function startSharing() {
     videoElement.srcObject = captureStream;
     emptyState.hidden = true;
     startBtn.disabled = true;
+    testBtn.disabled = true;
     stopBtn.disabled = false;
     status.textContent = "Compartilhando sua tela";
 
@@ -148,6 +151,27 @@ async function startSharing() {
   } catch (error) {
     console.error("Erro ao iniciar o compartilhamento:", error);
     stopSharing();
+    status.textContent = getSharingErrorMessage(error);
+  }
+}
+
+async function testCapture() {
+  try {
+    captureStream?.getTracks().forEach((track) => track.stop());
+    captureStream = await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: false,
+    });
+
+    videoElement.srcObject = captureStream;
+    emptyState.hidden = true;
+    startBtn.disabled = true;
+    testBtn.disabled = true;
+    stopBtn.disabled = false;
+    status.textContent = "Captura local funcionando";
+    captureStream.getVideoTracks()[0].addEventListener("ended", stopSharing);
+  } catch (error) {
+    console.error("Erro no teste de captura:", error);
     status.textContent = getSharingErrorMessage(error);
   }
 }
@@ -177,6 +201,7 @@ function stopSharing() {
   videoElement.srcObject = null;
   emptyState.hidden = false;
   startBtn.disabled = false;
+  testBtn.disabled = false;
   stopBtn.disabled = true;
   status.textContent = "Aguardando conexão";
 }
