@@ -14,6 +14,7 @@ const broadcasterConnections = new Map();
 let captureStream = null;
 let viewerConnection = null;
 let isBroadcaster = false;
+const pendingViewerIceCandidates = [];
 
 socket.on("connect", () => {
   connectionDisplay.textContent = "Conectado";
@@ -48,6 +49,9 @@ socket.on("offer", async (broadcasterSocketId, offer) => {
     closeViewerConnection();
     viewerConnection = createConnection(broadcasterSocketId, false);
     await viewerConnection.setRemoteDescription(offer);
+    viewerConnection.pendingIceCandidates.push(
+      ...pendingViewerIceCandidates.splice(0),
+    );
     await addPendingIceCandidates(viewerConnection);
 
     const answer = await viewerConnection.createAnswer();
@@ -66,7 +70,10 @@ socket.on("offer", async (broadcasterSocketId, offer) => {
 
 socket.on("answer", async (watcherId, answer) => {
   const connection = broadcasterConnections.get(watcherId);
-  if (!connection) return;
+  if (!connection) {
+    if (!isBroadcaster) pendingViewerIceCandidates.push(candidate);
+    return;
+  }
 
   try {
     await connection.setRemoteDescription(answer);
@@ -194,6 +201,9 @@ function createConnection(peerId, broadcasterSide) {
       videoElement.srcObject = event.streams[0];
       emptyState.hidden = true;
       status.textContent = "Transmitindo ao vivo";
+      videoElement.play().catch((error) => {
+        console.error("Não foi possível reproduzir a tela recebida:", error);
+      });
     }
   };
 
@@ -221,6 +231,7 @@ async function addPendingIceCandidates(connection) {
 function closeViewerConnection() {
   viewerConnection?.close();
   viewerConnection = null;
+  pendingViewerIceCandidates.length = 0;
 }
 
 function getVideoConstraints() {
