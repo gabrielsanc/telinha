@@ -143,8 +143,20 @@ async function startSharing() {
   } catch (error) {
     console.error("Erro ao iniciar o compartilhamento:", error);
     stopSharing();
-    status.textContent = "Não foi possível iniciar o compartilhamento";
+    status.textContent = getSharingErrorMessage(error);
   }
+}
+
+function getSharingErrorMessage(error) {
+  if (error.name === "NotAllowedError") {
+    return "Permissão para compartilhar a tela foi negada";
+  }
+
+  if (error.name === "NotSupportedError") {
+    return "Use Chrome ou Edge em um computador para compartilhar a tela";
+  }
+
+  return "Não foi possível iniciar o compartilhamento";
 }
 
 function stopSharing() {
