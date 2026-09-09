@@ -55,12 +55,12 @@
             <option value="60" selected>60</option>
           </select>
         </label>
-        <label class="resolution" for="viewerIdInput">
-          ID do espectador
+        <label class="resolution" for="viewerNicknameInput">
+          Nickname do espectador
           <input
-            id="viewerIdInput"
+            id="viewerNicknameInput"
             type="text"
-            placeholder="Cole o ID aqui"
+            placeholder="Digite o nickname"
             autocomplete="off"
           />
         </label>
@@ -79,20 +79,54 @@
       const peerIdDisplay = document.getElementById("peerIdDisplay");
       const resolutionSelect = document.getElementById("resolutionSelect");
       const frameRateSelect = document.getElementById("frameRateSelect");
-      const viewerIdInput = document.getElementById("viewerIdInput");
+      const viewerNicknameInput = document.getElementById(
+        "viewerNicknameInput",
+      );
       const sharingPeopleList = document.getElementById("sharingPeopleList");
       const activeShares = new Map();
+      const peerStorageKey = "telinha-nickname";
       let captureStream = null;
-      const peer = new Peer();
+      let peer = createPeer();
 
-      peer.on("open", (id) => {
-        console.log("Meu ID é: " + id);
-        peerIdDisplay.textContent = `Seu ID: ${id}`;
-        status.textContent = `ID: ${id}`;
-      });
+      configurePeer(peer);
+
+      function configurePeer(peerInstance) {
+        peerInstance.on("open", (id) => {
+          console.log("Meu nickname é: " + id);
+          peerIdDisplay.textContent = `Seu nickname: ${id}`;
+          status.textContent = `Nickname: ${id}`;
+        });
+
+        peerInstance.on("error", (error) => {
+          console.error("Erro do PeerJS:", error);
+
+          if (error.type === "unavailable-id") {
+            localStorage.removeItem(peerStorageKey);
+            peerInstance.destroy();
+            peer = createPeer();
+            configurePeer(peer);
+            return;
+          }
+
+          status.textContent = `Erro no nickname: ${error.type}`;
+        });
+
+        peerInstance.on("call", handleIncomingCall);
+      }
+
+      function createPeer() {
+        let savedId = localStorage.getItem(peerStorageKey);
+
+        if (!savedId) {
+          savedId = `pessoa-${crypto.randomUUID().replaceAll("-", "").slice(0, 10)}`;
+          localStorage.setItem(peerStorageKey, savedId);
+        }
+
+        return new Peer(savedId);
+      }
 
       // Atende chamadas recebidas e exibe o vídeo remoto
-      peer.on("call", (chamada) => {
+      function handleIncomingCall(chamada) {
         chamada.answer();
 
         chamada.on("stream", (fluxoDeVideoRemoto) => {
@@ -103,17 +137,21 @@
         });
 
         chamada.on("close", () => removeSharingPerson(chamada.peer));
-        chamada.on("error", () => removeSharingPerson(chamada.peer));
-      });
+        chamada.on("error", (error) => {
+          console.error("Erro ao receber a tela:", error);
+          removeSharingPerson(chamada.peer);
+          status.textContent = "Não foi possível receber a tela";
+        });
+      }
 
       // Função para iniciar a captura
       startBtn.addEventListener("click", async () => {
         try {
-          const idDoAmigo = viewerIdInput.value.trim();
+          const idDoAmigo = normalizeNickname(viewerNicknameInput.value);
 
           if (!idDoAmigo) {
-            status.textContent = "Informe o ID do espectador";
-            viewerIdInput.focus();
+            status.textContent = "Informe o nickname do espectador";
+            viewerNicknameInput.focus();
             return;
           }
 
@@ -144,16 +182,22 @@
             audio: false, // Mude para true se quiser tentar capturar o áudio do sistema
           });
 
+          await waitForPeerOpen();
+
           // Conecta o fluxo de tela capturado à tag <video> do HTML
           videoElement.srcObject = captureStream;
           emptyState.hidden = true;
-          status.textContent = "Compartilhamento ativo";
+          status.textContent = `Conectando ao espectador ${idDoAmigo}`;
 
           // Envia o fluxo de vídeo para o outro usuário pelo PeerJS
           const chamada = peer.call(idDoAmigo, captureStream);
           addSharingPerson("Você", "local");
           chamada.on("close", () => removeSharingPerson("Você"));
-          chamada.on("error", () => removeSharingPerson("Você"));
+          chamada.on("error", (error) => {
+            console.error("Erro ao enviar a tela:", error);
+            removeSharingPerson("Você");
+            status.textContent = "Espectador não encontrado ou desconectado";
+          });
 
           // Atualiza o estado dos botões
           startBtn.disabled = true;
@@ -168,6 +212,8 @@
             "Erro: O usuário não deu permissão ou o navegador não suporta.",
             err,
           );
+          status.textContent = "Não foi possível iniciar o compartilhamento";
+          stopCapture();
         }
       });
 
@@ -204,6 +250,35 @@
         stopBtn.disabled = true;
         status.textContent = "Aguardando conexão";
         removeSharingPerson("Você");
+      }
+
+      function waitForPeerOpen() {
+        if (peer.open) return Promise.resolve();
+
+        return new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error("O PeerJS não ficou pronto a tempo"));
+          }, 10000);
+
+          peer.once("open", () => {
+            clearTimeout(timeout);
+            resolve();
+          });
+
+          peer.once("error", (error) => {
+            clearTimeout(timeout);
+            reject(error);
+          });
+        });
+      }
+
+      function normalizeNickname(nickname) {
+        return nickname
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]/g, "-")
+          .replace(/-+/g, "-")
+          .replace(/^-|-$/g, "");
       }
 
       function addSharingPerson(peerId, type) {
