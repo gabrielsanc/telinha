@@ -49,6 +49,15 @@
         console.log("Meu ID é: " + id);
       });
 
+      // Atende chamadas recebidas e exibe o vídeo remoto
+      peer.on("call", (chamada) => {
+        chamada.answer();
+
+        chamada.on("stream", (fluxoDeVideoRemoto) => {
+          videoElement.srcObject = fluxoDeVideoRemoto;
+        });
+      });
+
       // Função para iniciar a captura
       startBtn.addEventListener("click", async () => {
         try {
