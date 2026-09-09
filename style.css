@@ -144,7 +144,18 @@ select {
   cursor: pointer;
 }
 
+input {
+  width: 170px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 10px 12px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font: inherit;
+}
+
 select:focus-visible,
+input:focus-visible,
 button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

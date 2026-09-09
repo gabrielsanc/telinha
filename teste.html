@@ -14,7 +14,7 @@
           <p class="eyebrow">WebRTC / Telinha</p>
           <h1>Sua tela, em foco.</h1>
         </div>
-        <span class="connection">PeerJS pronto</span>
+        <span class="connection" id="peerIdDisplay">Conectando...</span>
       </header>
 
       <section class="screen" aria-label="Visualização da tela compartilhada">
@@ -48,6 +48,15 @@
             <option value="60" selected>60</option>
           </select>
         </label>
+        <label class="resolution" for="viewerIdInput">
+          ID do espectador
+          <input
+            id="viewerIdInput"
+            type="text"
+            placeholder="Cole o ID aqui"
+            autocomplete="off"
+          />
+        </label>
         <span class="connection" id="status">Aguardando conexão</span>
       </section>
     </main>
@@ -60,14 +69,16 @@
       const screenElement = document.querySelector(".screen");
       const emptyState = document.getElementById("emptyState");
       const status = document.getElementById("status");
+      const peerIdDisplay = document.getElementById("peerIdDisplay");
       const resolutionSelect = document.getElementById("resolutionSelect");
       const frameRateSelect = document.getElementById("frameRateSelect");
+      const viewerIdInput = document.getElementById("viewerIdInput");
       let captureStream = null;
       const peer = new Peer();
-      const idDoAmigo = "id-de-quem-assiste";
 
       peer.on("open", (id) => {
         console.log("Meu ID é: " + id);
+        peerIdDisplay.textContent = `Seu ID: ${id}`;
         status.textContent = `ID: ${id}`;
       });
 
@@ -85,6 +96,14 @@
       // Função para iniciar a captura
       startBtn.addEventListener("click", async () => {
         try {
+          const idDoAmigo = viewerIdInput.value.trim();
+
+          if (!idDoAmigo) {
+            status.textContent = "Informe o ID do espectador";
+            viewerIdInput.focus();
+            return;
+          }
+
           // É aqui que a mágica acontece! A API pede permissão ao usuário.
           const selectedResolution = resolutionSelect.value;
           const selectedFrameRate = frameRateSelect.value;
