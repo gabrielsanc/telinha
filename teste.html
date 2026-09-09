@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <title>Captura de Tela com WebRTC</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        text-align: center;
+        margin-top: 50px;
+      }
+      video {
+        width: 80%;
+        max-width: 800px;
+        border: 2px solid #ccc;
+        margin-top: 20px;
+        background: #222;
+      }
+      button {
+        padding: 10px 20px;
+        font-size: 16px;
+        cursor: pointer;
+        margin: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Meu App de Compartilhamento de Tela</h2>
+
+    <!-- Botões de controle -->
+    <button id="startBtn">Compartilhar Tela</button>
+    <button id="stopBtn" disabled>Parar Compartilhamento</button>
+    <br />
+
+    <!-- Onde o vídeo capturado vai aparecer -->
+    <video id="videoElement" autoplay playsinline></video>
+
+    <script>
+      const startBtn = document.getElementById("startBtn");
+      const stopBtn = document.getElementById("stopBtn");
+      const videoElement = document.getElementById("videoElement");
+      let captureStream = null;
+      const peer = new Peer();
+      const idDoAmigo = "id-de-quem-assiste";
+
+      peer.on("open", (id) => {
+        console.log("Meu ID é: " + id);
+      });
+
+      // Função para iniciar a captura
+      startBtn.addEventListener("click", async () => {
+        try {
+          // É aqui que a mágica acontece! A API pede permissão ao usuário.
+          captureStream = await navigator.mediaDevices.getDisplayMedia({
+            video: true,
+            audio: false, // Mude para true se quiser tentar capturar o áudio do sistema
+          });
+
+          // Conecta o fluxo de tela capturado à tag <video> do HTML
+          videoElement.srcObject = captureStream;
+
+          // Envia o fluxo de vídeo para o outro usuário pelo PeerJS
+          peer.call(idDoAmigo, captureStream);
+
+          // Atualiza o estado dos botões
+          startBtn.disabled = true;
+          stopBtn.disabled = false;
+
+          // Se o usuário clicar em "Parar compartilhamento" na barra nativa do navegador
+          captureStream
+            .getVideoTracks()[0]
+            .addEventListener("ended", stopCapture);
+        } catch (err) {
+          console.error(
+            "Erro: O usuário não deu permissão ou o navegador não suporta.",
+            err,
+          );
+        }
+      });
+
+      // Função para parar a captura pelo nosso botão
+      stopBtn.addEventListener("click", stopCapture);
+
+      function stopCapture() {
+        if (captureStream) {
+          // Pega todas as faixas (tracks) de vídeo/áudio e as encerra
+          let tracks = captureStream.getTracks();
+          tracks.forEach((track) => track.stop());
+
+          // Limpa a tag de vídeo
+          videoElement.srcObject = null;
+        }
+
+        // Reseta os botões
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+      }
+    </script>
+  </body>
+</html>
