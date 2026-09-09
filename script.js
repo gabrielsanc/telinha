@@ -71,10 +71,7 @@ socket.on("offer", async (broadcasterSocketId, offer) => {
 
 socket.on("answer", async (watcherId, answer) => {
   const connection = broadcasterConnections.get(watcherId);
-  if (!connection) {
-    if (!isBroadcaster) pendingViewerIceCandidates.push(candidate);
-    return;
-  }
+  if (!connection) return;
 
   try {
     await connection.setRemoteDescription(answer);
