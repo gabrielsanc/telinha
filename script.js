@@ -9,6 +9,7 @@ const status = document.getElementById("status");
 const connectionDisplay = document.getElementById("peerIdDisplay");
 const resolutionSelect = document.getElementById("resolutionSelect");
 const frameRateSelect = document.getElementById("frameRateSelect");
+const displaySurfaceSelect = document.getElementById("displaySurfaceSelect");
 const broadcasterConnections = new Map();
 
 let captureStream = null;
@@ -238,6 +239,9 @@ function getVideoConstraints() {
   const constraints = {};
   const resolution = resolutionSelect.value;
   const frameRate = frameRateSelect.value;
+  const displaySurface = displaySurfaceSelect.value;
+
+  constraints.displaySurface = displaySurface;
 
   if (resolution !== "auto") {
     const [width, height] = resolution.split("x").map(Number);
