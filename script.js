@@ -1,6 +1,5 @@
 const socket = io();
 const startBtn = document.getElementById("startBtn");
-const testBtn = document.getElementById("testBtn");
 const stopBtn = document.getElementById("stopBtn");
 const fullscreenBtn = document.getElementById("fullscreenBtn");
 const videoElement = document.getElementById("videoElement");
@@ -119,7 +118,6 @@ socket.on("broadcaster-stopped", () => {
 });
 
 startBtn.addEventListener("click", startSharing);
-testBtn.addEventListener("click", testCapture);
 stopBtn.addEventListener("click", stopSharing);
 
 fullscreenBtn.addEventListener("click", async () => {
@@ -131,49 +129,60 @@ fullscreenBtn.addEventListener("click", async () => {
 });
 
 async function startSharing() {
+  startBtn.disabled = true;
+  status.textContent = "Abrindo seletor de tela...";
+
   try {
-    const videoConstraints = getVideoConstraints();
-    captureStream = await navigator.mediaDevices.getDisplayMedia({
-      video: Object.keys(videoConstraints).length > 0 ? videoConstraints : true,
-      audio: false,
-    });
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      throw new DOMException(
+        "Captura de tela não suportada",
+        "NotSupportedError",
+      );
+    }
+
+    stopConnections();
+    captureStream = await requestScreenCapture();
 
     isBroadcaster = true;
     socket.emit("broadcaster");
     videoElement.srcObject = captureStream;
     emptyState.hidden = true;
     startBtn.disabled = true;
-    testBtn.disabled = true;
     stopBtn.disabled = false;
     status.textContent = "Compartilhando sua tela";
 
-    captureStream.getVideoTracks()[0].addEventListener("ended", stopSharing);
+    captureStream.getVideoTracks()[0].addEventListener("ended", stopSharing, {
+      once: true,
+    });
   } catch (error) {
     console.error("Erro ao iniciar o compartilhamento:", error);
-    stopSharing();
+    resetCaptureState();
     status.textContent = getSharingErrorMessage(error);
   }
 }
 
-async function testCapture() {
-  try {
-    captureStream?.getTracks().forEach((track) => track.stop());
-    captureStream = await navigator.mediaDevices.getDisplayMedia({
-      video: true,
-      audio: false,
-    });
+async function requestScreenCapture() {
+  const capturedStream = await navigator.mediaDevices.getDisplayMedia({
+    video: true,
+    audio: false,
+  });
 
-    videoElement.srcObject = captureStream;
-    emptyState.hidden = true;
-    startBtn.disabled = true;
-    testBtn.disabled = true;
-    stopBtn.disabled = false;
-    status.textContent = "Captura local funcionando";
-    captureStream.getVideoTracks()[0].addEventListener("ended", stopSharing);
-  } catch (error) {
-    console.error("Erro no teste de captura:", error);
-    status.textContent = getSharingErrorMessage(error);
+  const videoTrack = capturedStream.getVideoTracks()[0];
+  if (!videoTrack) {
+    throw new DOMException("Nenhuma imagem foi capturada", "NotFoundError");
   }
+
+  const constraints = getVideoConstraints();
+
+  if (Object.keys(constraints).length > 0) {
+    try {
+      await videoTrack.applyConstraints(constraints);
+    } catch (error) {
+      console.warn("As opções de vídeo não foram aplicadas:", error);
+    }
+  }
+
+  return new MediaStream([videoTrack]);
 }
 
 function getSharingErrorMessage(error) {
@@ -194,16 +203,23 @@ function stopSharing() {
   isBroadcaster = false;
   socket.emit("stop-broadcast");
 
-  broadcasterConnections.forEach((connection) => connection.close());
-  broadcasterConnections.clear();
-  closeViewerConnection();
+  stopConnections();
 
+  resetCaptureState();
+}
+
+function resetCaptureState() {
   videoElement.srcObject = null;
   emptyState.hidden = false;
   startBtn.disabled = false;
-  testBtn.disabled = false;
   stopBtn.disabled = true;
   status.textContent = "Aguardando conexão";
+}
+
+function stopConnections() {
+  broadcasterConnections.forEach((connection) => connection.close());
+  broadcasterConnections.clear();
+  closeViewerConnection();
 }
 
 function createConnection(peerId, broadcasterSide) {
@@ -261,9 +277,6 @@ function getVideoConstraints() {
   const constraints = {};
   const resolution = resolutionSelect.value;
   const frameRate = frameRateSelect.value;
-  const displaySurface = displaySurfaceSelect.value;
-
-  constraints.displaySurface = displaySurface;
 
   if (resolution !== "auto") {
     const [width, height] = resolution.split("x").map(Number);

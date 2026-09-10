@@ -3,109 +3,70 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="refresh" content="0; url=teste.html" />
-    <title>Captura de Tela com WebRTC</title>
-    <style>
-      body {
-        font-family: sans-serif;
-        text-align: center;
-        margin-top: 50px;
-      }
-      video {
-        width: 80%;
-        max-width: 800px;
-        border: 2px solid #ccc;
-        margin-top: 20px;
-        background: #222;
-      }
-      button {
-        padding: 10px 20px;
-        font-size: 16px;
-        cursor: pointer;
-        margin: 5px;
-      }
-    </style>
+    <script src="/socket.io/socket.io.js"></script>
+    <link rel="stylesheet" href="style.css" />
+    <title>Telinha | Compartilhamento de tela</title>
   </head>
   <body>
-    <h2>Meu App de Compartilhamento de Tela</h2>
+    <main>
+      <header>
+        <div>
+          <p class="eyebrow">WebRTC / Telinha</p>
+          <h1>titio</h1>
+        </div>
+        <span class="connection" id="peerIdDisplay">Conectando...</span>
+      </header>
 
-    <!-- Botões de controle -->
-    <button id="startBtn">Compartilhar Tela</button>
-    <button id="stopBtn" disabled>Parar Compartilhamento</button>
-    <br />
+      <section class="screen" aria-label="Visualização da tela compartilhada">
+        <video id="videoElement" autoplay muted playsinline></video>
+        <div class="empty-state" id="emptyState">
+          <strong>Nenhuma tela compartilhada</strong>
+          <span>Inicie uma sessão para visualizar o conteúdo.</span>
+        </div>
+      </section>
 
-    <!-- Onde o vídeo capturado vai aparecer -->
-    <video id="videoElement" autoplay playsinline></video>
+      <section class="sharing-list" aria-labelledby="sharingTitle">
+        <h2 id="sharingTitle">Pessoas compartilhando a tela</h2>
+        <ul id="sharingPeopleList">
+          <li class="empty-list">Ninguém está compartilhando no momento.</li>
+        </ul>
+      </section>
 
-    <script>
-      const startBtn = document.getElementById("startBtn");
-      const stopBtn = document.getElementById("stopBtn");
-      const videoElement = document.getElementById("videoElement");
-      let captureStream = null;
-      const peer = new Peer();
-      const idDoAmigo = "id-de-quem-assiste";
+      <section class="controls" aria-label="Controles de compartilhamento">
+        <div class="actions">
+          <button id="startBtn">Compartilhar tela</button>
+          <button id="stopBtn" disabled>Parar</button>
+          <button id="fullscreenBtn">Tela cheia</button>
+        </div>
+        <label class="resolution" for="resolutionSelect">
+          Resolução
+          <select id="resolutionSelect">
+            <option value="auto">Automática</option>
+            <option value="1280x720">720p</option>
+            <option value="1920x1080" selected>1080p</option>
+            <option value="2560x1440">1440p</option>
+          </select>
+        </label>
+        <label class="resolution" for="frameRateSelect">
+          FPS
+          <select id="frameRateSelect">
+            <option value="auto">Automático</option>
+            <option value="30">30</option>
+            <option value="60" selected>60</option>
+          </select>
+        </label>
+        <label class="resolution" for="displaySurfaceSelect">
+          Origem
+          <select id="displaySurfaceSelect">
+            <option value="monitor" selected>Tela inteira</option>
+            <option value="window">Janela</option>
+            <option value="browser">Aba do navegador</option>
+          </select>
+        </label>
+        <span class="connection" id="status">Aguardando conexão</span>
+      </section>
+    </main>
 
-      peer.on("open", (id) => {
-        console.log("Meu ID é: " + id);
-      });
-
-      // Atende chamadas recebidas e exibe o vídeo remoto
-      peer.on("call", (chamada) => {
-        chamada.answer();
-
-        chamada.on("stream", (fluxoDeVideoRemoto) => {
-          videoElement.srcObject = fluxoDeVideoRemoto;
-        });
-      });
-
-      // Função para iniciar a captura
-      startBtn.addEventListener("click", async () => {
-        try {
-          // É aqui que a mágica acontece! A API pede permissão ao usuário.
-          captureStream = await navigator.mediaDevices.getDisplayMedia({
-            video: true,
-            audio: false, // Mude para true se quiser tentar capturar o áudio do sistema
-          });
-
-          // Conecta o fluxo de tela capturado à tag <video> do HTML
-          videoElement.srcObject = captureStream;
-
-          // Envia o fluxo de vídeo para o outro usuário pelo PeerJS
-          peer.call(idDoAmigo, captureStream);
-
-          // Atualiza o estado dos botões
-          startBtn.disabled = true;
-          stopBtn.disabled = false;
-
-          // Se o usuário clicar em "Parar compartilhamento" na barra nativa do navegador
-          captureStream
-            .getVideoTracks()[0]
-            .addEventListener("ended", stopCapture);
-        } catch (err) {
-          console.error(
-            "Erro: O usuário não deu permissão ou o navegador não suporta.",
-            err,
-          );
-        }
-      });
-
-      // Função para parar a captura pelo nosso botão
-      stopBtn.addEventListener("click", stopCapture);
-
-      function stopCapture() {
-        if (captureStream) {
-          // Pega todas as faixas (tracks) de vídeo/áudio e as encerra
-          let tracks = captureStream.getTracks();
-          tracks.forEach((track) => track.stop());
-
-          // Limpa a tag de vídeo
-          videoElement.srcObject = null;
-        }
-
-        // Reseta os botões
-        startBtn.disabled = false;
-        stopBtn.disabled = true;
-      }
-    </script>
+    <script src="script.js"></script>
   </body>
 </html>
